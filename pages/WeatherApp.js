@@ -1,19 +1,22 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, Image, StyleSheet, ScrollView, ActivityIndicator, Alert, Modal, TouchableOpacity } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
-import { Input, Button } from "@rneui/themed";
+import { Input } from "@rneui/themed";
 import axios from "axios";
 
 export default function WeatherApp() {
   const [weather, setWeather] = useState(null);
+  const [weatherAPIData, setWeatherAPIData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [city, setCity] = useState("Camaragibe");
   const [newCity, setNewCity] = useState("");
+  const [isDayTime, setIsDayTime] = useState(true);
 
   useEffect(() => {
     fetchWeather();
+    fetchWeatherAPI();
   }, [city]);
 
   const fetchWeather = async () => {
@@ -28,6 +31,7 @@ export default function WeatherApp() {
       // Verificar se os dados da resposta estão corretos
       if (response.data && response.data.results) {
         setWeather(response.data.results);
+        setIsDayTime(response.data.results.currently === 'dia');
       } else {
         throw new Error("Dados inválidos da API");
       }
@@ -38,6 +42,32 @@ export default function WeatherApp() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchWeatherAPI = async () => {
+    try {
+      const response = await axios.get(`https://api.weatherapi.com/v1/forecast.json`, {
+        params: { key: "3117331ded2d45e59d7185040240311 ", q: city, days: 1, aqi: "no", alerts: "no" },
+      });
+      if (response.data) {
+        setWeatherAPIData(response.data);
+      } else {
+        throw new Error("Dados inválidos da WeatherAPI");
+      }
+    } catch (err) {
+      console.error("Erro ao buscar dados da WeatherAPI:", err);
+    }
+  };
+
+  const getNextHoursForecast = () => {
+    if (!weatherAPIData) return [];
+
+    const currentHour = new Date().getHours();
+    // Filtra para pegar somente as horas futuras no dia atual
+    return weatherAPIData.forecast.forecastday[0].hour.filter(hourData => {
+      const hour = new Date(hourData.time).getHours();
+      return hour >= currentHour;
+    }).slice(1, 5); // Pega as próximas 4 horas (ou ajuste conforme necessário)
   };
 
   const handleCityChange = () => {
@@ -73,7 +103,7 @@ export default function WeatherApp() {
 
   if (!weather) return <Text>Erro ao carregar dados climáticos.</Text>;
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: isDayTime ? "#4A90E2" : "#1C3D63" }]}>
       <Modal
         transparent={true}
         visible={modalVisible}
@@ -141,19 +171,17 @@ export default function WeatherApp() {
             <Text style={styles.sectionTitleDate}>{weather.date}</Text>
           </View>
 
-          <View style={styles.forecastHours}>
-            {/* Repeat for each hour */}
-            {weather.forecast.slice(0,4).map((hour, index) => {
-              return (
-                <View key={index} style={styles.hourItem}>
-                  <Text style={styles.hourText}>{hour.time}</Text>
-                  <Icon name={getWeatherIcon(hour.condition)} size={20} color="#fff" />
-                  <Text style={styles.hourTemp}>{hour.temp}°C</Text>
-                </View>
-              )
-            })}
-
-          </View>
+          {weatherAPIData && (
+            <View style={styles.forecastHours}>
+               {getNextHoursForecast().map((hour, index) => (
+              <View key={index} style={styles.hourItem}>
+                <Text style={styles.hourText}>{hour.time.split(" ")[1]}</Text>
+                <Icon name="cloud-outline" size={20} color="#fff" />
+                <Text style={styles.hourTemp}>{hour.temp_c}°C</Text>
+              </View>
+            ))}
+            </View>
+          )}
         </View>
 
         {/* Next Forecast */}
@@ -285,10 +313,11 @@ const styles = StyleSheet.create({
   },
   forecastHours: {
     flexDirection: "row",
-    justifyContent: "space-around",
+    justifyContent: "space-around"
   },
   hourItem: {
     alignItems: "center",
+    margin: 20
   },
   hourText: {
     color: "#fff",
